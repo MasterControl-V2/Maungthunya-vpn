@@ -70,6 +70,7 @@ function handleTelegramUpdate($update) {
 
     // ==================== TEXT INPUT STATES ====================
     
+    // Custom Bug Domain text input
     if ($state === 'awaiting_bug_domain_text') {
         saveTempData($cid, 'bug_domain', $text);
         setUserState($cid, 'awaiting_port_select');
@@ -78,11 +79,11 @@ function handleTelegramUpdate($update) {
         return;
     }
     
-    // Path input after port select
+    // ✅ FIX: Path input after port select
     if ($state === 'awaiting_custom_path') {
         $path = trim($text);
         if ($path === '') $path = '/';
-        if (!str_starts_with($path, '/')) $path = '/' . $path;
+        if ($path[0] !== '/') $path = '/' . $path;
         saveTempData($cid, 'custom_path', $path);
         clearUserState($cid);
         sendMessage($cid, "📁 Path: <b>{$path}</b>\n\n🔄 Creating VLESS...", 'HTML');
@@ -90,7 +91,7 @@ function handleTelegramUpdate($update) {
         return;
     }
 
-    // Edit Panel flows (keep original)
+    // Edit Panel - Name
     if ($state === 'awaiting_edit_panel_name') {
         $idx = getTempData($cid, 'edit_panel_idx');
         if ($text !== '-') {
@@ -297,7 +298,6 @@ function handleCallbackQuery($cb) {
     
     answerCallbackQuery($cb['id']);
 
-    // Panel management
     if ($data === 'panel_settings') {
         showPanelManagement($cid, $mid);
         return;
@@ -351,10 +351,6 @@ function handleCallbackQuery($cb) {
         saveTempData($cid, 'selected_panel', $selected);
         setUserState($cid, 'awaiting_bug_domain');
         
-        $name = getTempData($cid, 'name');
-        $days = getTempData($cid, 'days');
-        $gb = getTempData($cid, 'gb') ?: DEFAULT_USER_GB;
-        
         editMessageText($cid, $mid, "📡 <b>{$selected['name']}</b> - {$selected['location']}\n\n🐛 <b>Select Bug Domain:</b>");
         showBugDomainKeyboard($cid);
         return;
@@ -385,7 +381,6 @@ function handleCallbackQuery($cb) {
         return;
     }
 
-    // Normal buttons
     if ($data === 'custom_bug') {
         setUserState($cid, 'awaiting_bug_domain_text');
         editMessageText($cid, $mid, "✏️ Type your custom Bug Domain/IP:");
@@ -446,9 +441,7 @@ function handleCommand($cid, $text, $fname, $isAdmin, $fid) {
             saveTempData($cid, 'gb', $gb);
             saveTempData($cid, 'days', $days);
             setUserState($cid, 'awaiting_panel_select');
-            
-            $msg = "📝 <b>Admin Create VLESS</b>\n\n👤 {$name}\n📊 {$gb}GB\n📅 {$days} days\n\n📡 <b>Select Panel:</b>";
-            sendMessage($cid, $msg, 'HTML');
+            sendMessage($cid, "📝 <b>Admin Create VLESS</b>\n\n👤 {$name}\n📊 {$gb}GB\n📅 {$days} days\n\n📡 <b>Select Panel:</b>", 'HTML');
             showPanelKeyboard($cid);
             return;
         }
@@ -469,9 +462,7 @@ function handleCommand($cid, $text, $fname, $isAdmin, $fid) {
         saveTempData($cid, 'gb', DEFAULT_USER_GB);
         saveTempData($cid, 'days', $days);
         setUserState($cid, 'awaiting_panel_select');
-        
-        $msg = "📝 <b>Create VLESS</b>\n\n👤 {$name}\n📊 " . DEFAULT_USER_GB . "GB (Fixed)\n📅 {$days} days\n\n📡 <b>Select Panel:</b>";
-        sendMessage($cid, $msg, 'HTML');
+        sendMessage($cid, "📝 <b>Create VLESS</b>\n\n👤 {$name}\n📊 " . DEFAULT_USER_GB . "GB (Fixed)\n📅 {$days} days\n\n📡 <b>Select Panel:</b>", 'HTML');
         showPanelKeyboard($cid);
         return;
     }
@@ -486,18 +477,13 @@ function handleCommand($cid, $text, $fname, $isAdmin, $fid) {
             $cr = getUserCredit($cid);
             $adm = ($fid == ADMIN_ID || isAdmin($fid));
             $pnCount = count(getUserPanels($cid));
-
             $msg = "🚀 <b>EVT VPN Bot</b> v14.0 (Auto Inbound)\n\n";
             $msg .= "👋 Hello <b>{$fname}</b>!\n";
             $msg .= "🆔 <code>{$fid}</code>\n";
             $msg .= "💰 <b>{$cr} credit</b>\n";
             $msg .= "🏷️ " . ($adm ? "👑 Admin" : "👤 User") . "\n";
             $msg .= "📡 Panels: <b>{$pnCount}</b>\n\n";
-
-            if ($pnCount == 0) {
-                $msg .= "⚠️ <b>No Panels!</b>\nUse <code>/addpanel</code> to add server.\n\n";
-            }
-
+            if ($pnCount == 0) $msg .= "⚠️ <b>No Panels!</b>\nUse <code>/addpanel</code> to add server.\n\n";
             $msg .= "📌 <b>New Feature:</b> Bot auto-creates inbound with your port & path!\n\n";
             $msg .= "🔗 <b>Commands:</b>\n";
             $msg .= "<code>/addpanel</code> - Add server\n";
@@ -505,14 +491,12 @@ function handleCommand($cid, $text, $fname, $isAdmin, $fid) {
             $msg .= "<code>/panels</code> - View & manage panels\n";
             $msg .= "<code>/balance</code> | <code>/bug</code> | <code>/qr</code>\n";
             $msg .= "<code>/traffic email</code> | <code>/delete email</code>\n";
-
             if ($adm) {
                 $msg .= "\n👑 <b>Admin:</b>\n";
                 $msg .= "<code>/create name gb days</code>\n";
                 $msg .= "<code>/addcredit</code> | <code>/delcredit</code>\n";
                 $msg .= "<code>/users</code> | <code>/broadcast</code>\n";
             }
-
             $kb = [
                 [['text' => '📡 Add Panel', 'callback_data' => 'add_panel']],
                 [['text' => '📝 Create VLESS', 'callback_data' => 'create_account']],
@@ -521,107 +505,88 @@ function handleCommand($cid, $text, $fname, $isAdmin, $fid) {
             ];
             sendMessage($cid, $msg, 'HTML', json_encode(['inline_keyboard' => $kb]));
             break;
-
         case '/addpanel':
             setUserState($cid, 'awaiting_panel_name');
             sendMessage($cid, "📡 <b>Add New Panel</b>\n\nStep 1/6: Panel Name:\nExample: <code>🇸🇬 Singapore #1</code>", 'HTML');
             break;
-
         case '/panels':
             showPanelManagement($cid);
             break;
-
         case '/balance':
             $c = getUserCredit($cid);
             sendMessage($cid, "💰 <b>{$c} credit</b>", 'HTML');
             break;
-
         case '/bug':
             showBugDomainKeyboard($cid);
             break;
-
         case '/traffic':
             if (empty($params)) { sendMessage($cid, "❌ <code>/traffic email</code>", 'HTML'); return; }
             checkTraffic($cid, $params);
             break;
-
         case '/delete':
             if (empty($params)) { sendMessage($cid, "❌ <code>/delete email</code>", 'HTML'); return; }
             deleteAccount($cid, $params);
             break;
-
         case '/qr':
             $lc = getLastConfig($cid);
             if ($lc) generateAndSendQR($cid, $lc);
             else sendMessage($cid, "❌ Create account first!");
             break;
-
         case '/history':
             showHistory($cid);
             break;
-
         case '/help':
             showHelp($cid, $fid);
             break;
-
         case '/cancel':
             clearUserState($cid); clearTempData($cid);
             sendMessage($cid, "❌ Cancelled.");
             break;
-
         case '/addcredit':
             if ($fid != ADMIN_ID && !isAdmin($fid)) { sendMessage($cid, "⛔ Admin only!"); return; }
             setUserState($cid, 'awaiting_addcredit_user');
             sendMessage($cid, "💰 <b>Add Credit</b>\n\nEnter User ID:", 'HTML');
             break;
-
         case '/delcredit':
             if ($fid != ADMIN_ID && !isAdmin($fid)) { sendMessage($cid, "⛔ Admin only!"); return; }
             setUserState($cid, 'awaiting_delcredit_user');
             sendMessage($cid, "💰 <b>Deduct Credit</b>\n\nEnter User ID:", 'HTML');
             break;
-
         case '/users':
             if ($fid != ADMIN_ID && !isAdmin($fid)) { sendMessage($cid, "⛔ Admin only!"); return; }
             showAllUsers($cid);
             break;
-
         case '/addadmin':
             if ($fid != ADMIN_ID) return;
             if (empty($params)) { sendMessage($cid, "❌ <code>/addadmin user_id</code>", 'HTML'); return; }
             addAdmin($params);
             sendMessage($cid, "✅ User <code>{$params}</code> is now Admin!", 'HTML');
             break;
-
         case '/deladmin':
             if ($fid != ADMIN_ID) return;
             if (empty($params)) { sendMessage($cid, "❌ <code>/deladmin user_id</code>", 'HTML'); return; }
             removeAdmin($params);
             sendMessage($cid, "✅ Removed from Admin.", 'HTML');
             break;
-
         case '/broadcast':
             if ($fid != ADMIN_ID && !isAdmin($fid)) { sendMessage($cid, "⛔ Admin only!"); return; }
             if (empty($params)) { sendMessage($cid, "❌ <code>/broadcast message</code>", 'HTML'); return; }
             broadcastMessage($cid, $params);
             break;
-
         default:
             sendMessage($cid, "❌ Unknown. Type /help", 'HTML');
     }
 }
 
-// ==================== CREATE VLESS (UPDATED) ====================
+// ==================== CREATE VLESS ====================
 
 function handleCreateCommand($cid, $fid) {
     $isAdmin = ($fid == ADMIN_ID || isAdmin($fid));
     $panels = getUserPanels($cid);
-    
     if (empty($panels)) {
         sendMessage($cid, "⚠️ No panels!\nUse <code>/addpanel</code> first", 'HTML');
         return;
     }
-
     if ($isAdmin) {
         setUserState($cid, 'awaiting_admin_name');
         sendMessage($cid, "📝 <b>Admin Create VLESS</b>\n\nEnter account name:", 'HTML');
@@ -655,7 +620,6 @@ function createVlessFinal($cid) {
         return;
     }
 
-    // Call api.php with auto inbound creation
     $apiUrl = rtrim($panel['url'], '/') . '/api.php';
     $query = http_build_query([
         'api_key' => 't.me/evtvpn143',
@@ -696,7 +660,6 @@ function createVlessFinal($cid) {
         return;
     }
     
-    // Build final config with bug domain
     $panelHost = parse_url($panel['url'], PHP_URL_HOST);
     $sni = $panel['domain'] ?? $panelHost;
     $bd = $bugDomain ?: 'mpt.com.mm';
@@ -784,14 +747,11 @@ function formatBytes($bytes, $p = 2) {
 function checkTraffic($cid, $email) {
     $panels = getUserPanels($cid);
     if (empty($panels)) { sendMessage($cid, "❌ No panels!", 'HTML'); return; }
-    
     $panel = $panels[0];
     $cookie = apiLoginDirect($panel['url'], $panel['username'], $panel['password']);
     if (!$cookie) { sendMessage($cid, "❌ Login failed!"); return; }
-    
     $r = apiCallDirect($panel['url'], $cookie, "xui/API/inbounds/getClientTraffics/{$email}", [], "GET");
     if (!isset($r['obj'])) { sendMessage($cid, "❌ Not found: <code>{$email}</code>", 'HTML'); return; }
-    
     $t = $r['obj'];
     $msg = "📊 <b>{$email}</b>\n";
     $msg .= "⬆️ " . formatBytes($t['up']) . " ⬇️ " . formatBytes($t['down']) . "\n";
@@ -803,11 +763,9 @@ function checkTraffic($cid, $email) {
 function deleteAccount($cid, $email) {
     $panels = getUserPanels($cid);
     if (empty($panels)) { sendMessage($cid, "❌ No panels!", 'HTML'); return; }
-    
     $panel = $panels[0];
     $cookie = apiLoginDirect($panel['url'], $panel['username'], $panel['password']);
     if (!$cookie) { sendMessage($cid, "❌ Login failed!"); return; }
-    
     $list = apiCallDirect($panel['url'], $cookie, "xui/API/inbounds/", [], "GET");
     foreach ($list['obj'] as $ib) {
         $s = json_decode($ib['settings'], true);
@@ -828,11 +786,7 @@ function deleteAccount($cid, $email) {
 
 function showPanelKeyboard($cid) {
     $panels = getUserPanels($cid);
-    if (empty($panels)) {
-        sendMessage($cid, "📭 No panels.\n<code>/addpanel</code>", 'HTML');
-        return;
-    }
-    
+    if (empty($panels)) { sendMessage($cid, "📭 No panels.\n<code>/addpanel</code>", 'HTML'); return; }
     $kb = [];
     foreach ($panels as $i => $p) {
         $kb[] = [['text' => "{$p['name']} ({$p['location']})", 'callback_data' => 'panel_' . $i]];
@@ -863,47 +817,33 @@ function showBugDomainKeyboard($cid) {
     sendMessage($cid, "🐛 <b>Select Bug Domain:</b>", 'HTML', json_encode(['inline_keyboard' => $kb]));
 }
 
-// ==================== PANEL MANAGEMENT FUNCTIONS (Keep original) ====================
+// ==================== PANEL MANAGEMENT FUNCTIONS ====================
 
 function showPanelManagement($cid, $mid = null) {
     $panels = getUserPanels($cid);
-    
     if (empty($panels)) {
         $msg = "📭 <b>No panels configured!</b>\n\nUse <code>/addpanel</code> to add a server.";
         if ($mid) editMessageText($cid, $mid, $msg);
         else sendMessage($cid, $msg, 'HTML');
         return;
     }
-    
-    $msg = "⚙️ <b>Panel Management</b>\n\n";
-    $msg .= "Total: <b>" . count($panels) . "</b> panels\n\n";
-    $msg .= "Select a panel to edit or delete:\n";
-    
+    $msg = "⚙️ <b>Panel Management</b>\n\nTotal: <b>" . count($panels) . "</b> panels\n\nSelect a panel to edit or delete:\n";
     $kb = [];
     foreach ($panels as $i => $p) {
         $msg .= ($i+1) . ". <b>{$p['name']}</b> - {$p['location']}\n";
-        $kb[] = [
-            ['text' => "✏️ {$p['name']}", 'callback_data' => "edit_panel_{$i}"],
-            ['text' => "🗑️", 'callback_data' => "delete_panel_{$i}"]
-        ];
+        $kb[] = [['text' => "✏️ {$p['name']}", 'callback_data' => "edit_panel_{$i}"], ['text' => "🗑️", 'callback_data' => "delete_panel_{$i}"]];
     }
     $kb[] = [['text' => '📡 Add New Panel', 'callback_data' => 'add_panel']];
     $kb[] = [['text' => '🔙 Back', 'callback_data' => 'my_panels']];
-    
-    if ($mid) {
-        editMessageText($cid, $mid, $msg, 'HTML', json_encode(['inline_keyboard' => $kb]));
-    } else {
-        sendMessage($cid, $msg, 'HTML', json_encode(['inline_keyboard' => $kb]));
-    }
+    if ($mid) editMessageText($cid, $mid, $msg, 'HTML', json_encode(['inline_keyboard' => $kb]));
+    else sendMessage($cid, $msg, 'HTML', json_encode(['inline_keyboard' => $kb]));
 }
 
 function updatePanelField($cid, $idx, $field, $value) {
     $file = __DIR__ . "/user_{$cid}.json";
     if (!file_exists($file)) return false;
-    
     $data = json_decode(file_get_contents($file), true);
     if (!isset($data['panels'][$idx])) return false;
-    
     $data['panels'][$idx][$field] = $value;
     file_put_contents($file, json_encode($data));
     syncPanelsToFile($cid);
@@ -913,10 +853,8 @@ function updatePanelField($cid, $idx, $field, $value) {
 function deletePanel($cid, $idx) {
     $file = __DIR__ . "/user_{$cid}.json";
     if (!file_exists($file)) return false;
-    
     $data = json_decode(file_get_contents($file), true);
     if (!isset($data['panels'][$idx])) return false;
-    
     unset($data['panels'][$idx]);
     $data['panels'] = array_values($data['panels']);
     file_put_contents($file, json_encode($data));
@@ -927,12 +865,10 @@ function deletePanel($cid, $idx) {
 function syncPanelsToFile($cid) {
     $panels = getUserPanels($cid);
     $pfile = __DIR__ . '/panels.php';
-    
     $content = "<?php\ndeclare(strict_types=1);\n\n";
     $content .= "if (basename(\$_SERVER['PHP_SELF']) === 'panels.php') {\n";
     $content .= "    header('Content-Type: application/json');\n}\n\n";
     $content .= "\$panels = [\n";
-    
     foreach ($panels as $p) {
         $content .= "    '" . addslashes($p['name']) . "' => [\n";
         $content .= "        'url' => '" . addslashes($p['url']) . "',\n";
@@ -943,7 +879,6 @@ function syncPanelsToFile($cid) {
         $content .= "        'type' => 'Premium'\n";
         $content .= "    ],\n";
     }
-    
     $content .= "];\n\n";
     $content .= "if (basename(\$_SERVER['PHP_SELF']) === 'panels.php') {\n";
     $content .= "    \$formatted = [];\n";
@@ -953,36 +888,22 @@ function syncPanelsToFile($cid) {
     $content .= "    echo json_encode(['status' => 'success', 'panels' => \$formatted], JSON_PRETTY_PRINT);\n";
     $content .= "    exit;\n}\n\n";
     $content .= "return \$panels;\n";
-    
     file_put_contents($pfile, $content);
 }
 
 function addPanelToFile($name, $data, $userId) {
     $ufile = __DIR__ . "/user_{$userId}.json";
     $udata = file_exists($ufile) ? json_decode(file_get_contents($ufile), true) : [];
-    $udata['panels'][] = [
-        'name' => $name,
-        'url' => $data['url'],
-        'username' => $data['username'],
-        'password' => $data['password'],
-        'location' => $data['location'],
-        'domain' => $data['domain']
-    ];
+    $udata['panels'][] = ['name' => $name, 'url' => $data['url'], 'username' => $data['username'], 'password' => $data['password'], 'location' => $data['location'], 'domain' => $data['domain']];
     file_put_contents($ufile, json_encode($udata));
     syncPanelsToFile($userId);
 }
 
 function listUserPanels($cid) {
     $panels = getUserPanels($cid);
-    if (empty($panels)) {
-        sendMessage($cid, "📭 No panels.\n<code>/addpanel</code>", 'HTML');
-        return;
-    }
+    if (empty($panels)) { sendMessage($cid, "📭 No panels.\n<code>/addpanel</code>", 'HTML'); return; }
     $msg = "📡 <b>Your Panels</b>\n\n";
-    foreach ($panels as $i => $p) {
-        $msg .= ($i+1) . ". <b>{$p['name']}</b>\n";
-        $msg .= "   📍 {$p['location']} | 🌐 {$p['domain']}\n\n";
-    }
+    foreach ($panels as $i => $p) $msg .= ($i+1) . ". <b>{$p['name']}</b>\n   📍 {$p['location']} | 🌐 {$p['domain']}\n\n";
     $msg .= "Use <code>/panels</code> to manage.";
     sendMessage($cid, $msg, 'HTML');
 }
@@ -991,9 +912,7 @@ function showHistory($cid) {
     $h = getUserHistory($cid);
     if (empty($h)) { sendMessage($cid, "📭 No history"); return; }
     $msg = "📜 <b>History</b>\n\n";
-    foreach (array_slice($h, 0, 10) as $i => $item) {
-        $msg .= ($i+1) . ". 📝 <b>{$item['name']}</b> ({$item['gb']}GB/{$item['days']}d)\n   {$item['date']}\n\n";
-    }
+    foreach (array_slice($h, 0, 10) as $i => $item) $msg .= ($i+1) . ". 📝 <b>{$item['name']}</b> ({$item['gb']}GB/{$item['days']}d)\n   {$item['date']}\n\n";
     sendMessage($cid, $msg, 'HTML');
 }
 
@@ -1007,13 +926,10 @@ function showHelp($cid, $fid) {
     $msg .= "→ Bot creates inbound + client automatically\n\n";
     if ($adm) {
         $msg .= "<b>Admin Create:</b>\n<code>/create name gb days</code>\n\n";
-        $msg .= "<b>Admin Commands:</b>\n";
-        $msg .= "<code>/addcredit</code> | <code>/delcredit</code>\n";
-        $msg .= "<code>/users</code> | <code>/broadcast</code>\n";
+        $msg .= "<b>Admin Commands:</b>\n<code>/addcredit</code> | <code>/delcredit</code>\n<code>/users</code> | <code>/broadcast</code>\n";
     }
     $msg .= "\n<b>Other:</b>\n<code>/balance</code> | <code>/bug</code> | <code>/qr</code>\n";
-    $msg .= "<code>/traffic email</code> | <code>/delete email</code>\n";
-    $msg .= "<code>/history</code>\n\n👨‍💻 @evtvpn143";
+    $msg .= "<code>/traffic email</code> | <code>/delete email</code>\n<code>/history</code>\n\n👨‍💻 @evtvpn143";
     sendMessage($cid, $msg, 'HTML');
 }
 
