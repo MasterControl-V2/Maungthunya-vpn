@@ -7,9 +7,9 @@
  */
 
 // ==================== BOT CONFIGURATION ====================
-define('BOT_TOKEN', 'bottoken');
-define('BOT_USERNAME', '@USERNAME');
-define('ADMIN_ID', TGID);
+define('BOT_TOKEN', '8954095695:AAFwWLcdvCpcb723rZB4-D4HHeDYigd6fCU');
+define('BOT_USERNAME', '@Zero_Free_Vpn');
+define('ADMIN_ID', 7576434717);
 
 // User Default GB
 define('DEFAULT_USER_GB', 100);
