@@ -1,9 +1,8 @@
 <?php
 /**
- * EVT VPN Bot - VLESS Manager + Config Transformer + Panel Management
+ * EVT VPN Bot - VLESS Manager + Auto Inbound Creator
  * Developer: @evtvpn143
- * Telegram: t.me/evtvpn143
- * @version 13.0 - User 100GB | Admin Full | Port Select | Panel Edit/Delete | Single Config
+ * @version 14.0 - Auto Create Inbound | Port & Path Select
  */
 
 // ==================== BOT CONFIGURATION ====================
@@ -44,7 +43,7 @@ if ($method === 'POST' && strpos($contentType, 'application/json') !== false) {
 
 if ($method === 'GET') {
     header('Content-Type: application/json');
-    echo json_encode(['status' => 'active', 'version' => '13.0', 'dev' => '@evtvpn143']);
+    echo json_encode(['status' => 'active', 'version' => '14.0', 'dev' => '@evtvpn143']);
     exit;
 }
 
@@ -71,7 +70,6 @@ function handleTelegramUpdate($update) {
 
     // ==================== TEXT INPUT STATES ====================
     
-    // Custom Bug Domain text input
     if ($state === 'awaiting_bug_domain_text') {
         saveTempData($cid, 'bug_domain', $text);
         setUserState($cid, 'awaiting_port_select');
@@ -79,8 +77,20 @@ function handleTelegramUpdate($update) {
         showPortKeyboard($cid);
         return;
     }
+    
+    // Path input after port select
+    if ($state === 'awaiting_custom_path') {
+        $path = trim($text);
+        if ($path === '') $path = '/';
+        if (!str_starts_with($path, '/')) $path = '/' . $path;
+        saveTempData($cid, 'custom_path', $path);
+        clearUserState($cid);
+        sendMessage($cid, "📁 Path: <b>{$path}</b>\n\n🔄 Creating VLESS...", 'HTML');
+        createVlessFinal($cid);
+        return;
+    }
 
-    // Edit Panel - Name
+    // Edit Panel flows (keep original)
     if ($state === 'awaiting_edit_panel_name') {
         $idx = getTempData($cid, 'edit_panel_idx');
         if ($text !== '-') {
@@ -93,7 +103,6 @@ function handleTelegramUpdate($update) {
         return;
     }
     
-    // Edit Panel - URL
     if ($state === 'awaiting_edit_panel_url') {
         $idx = getTempData($cid, 'edit_panel_idx');
         if ($text !== '-') {
@@ -107,7 +116,6 @@ function handleTelegramUpdate($update) {
         return;
     }
     
-    // Edit Panel - Username
     if ($state === 'awaiting_edit_panel_username') {
         $idx = getTempData($cid, 'edit_panel_idx');
         if ($text !== '-') {
@@ -120,7 +128,6 @@ function handleTelegramUpdate($update) {
         return;
     }
     
-    // Edit Panel - Password
     if ($state === 'awaiting_edit_panel_password') {
         $idx = getTempData($cid, 'edit_panel_idx');
         if ($text !== '-') {
@@ -133,7 +140,6 @@ function handleTelegramUpdate($update) {
         return;
     }
     
-    // Edit Panel - Location
     if ($state === 'awaiting_edit_panel_location') {
         $idx = getTempData($cid, 'edit_panel_idx');
         if ($text !== '-') {
@@ -146,7 +152,6 @@ function handleTelegramUpdate($update) {
         return;
     }
     
-    // Edit Panel - Domain
     if ($state === 'awaiting_edit_panel_domain') {
         $idx = getTempData($cid, 'edit_panel_idx');
         if ($text !== '-') {
@@ -292,15 +297,12 @@ function handleCallbackQuery($cb) {
     
     answerCallbackQuery($cb['id']);
 
-    // ==================== PANEL MANAGEMENT ====================
-    
-    // Panel settings menu
+    // Panel management
     if ($data === 'panel_settings') {
         showPanelManagement($cid, $mid);
         return;
     }
 
-    // Edit panel
     if (strpos($data, 'edit_panel_') === 0) {
         $idx = (int)substr($data, 11);
         $panels = getUserPanels($cid);
@@ -313,7 +315,6 @@ function handleCallbackQuery($cb) {
         return;
     }
 
-    // Delete panel confirmation
     if (strpos($data, 'delete_panel_') === 0) {
         $idx = (int)substr($data, 13);
         $panels = getUserPanels($cid);
@@ -328,7 +329,6 @@ function handleCallbackQuery($cb) {
         return;
     }
 
-    // Confirm delete
     if (strpos($data, 'confirm_delete_') === 0) {
         $idx = (int)substr($data, 15);
         $result = deletePanel($cid, $idx);
@@ -341,9 +341,7 @@ function handleCallbackQuery($cb) {
         return;
     }
 
-    // ==================== CREATE FLOW CALLBACKS ====================
-    
-    // Panel select during create
+    // CREATE FLOW CALLBACKS
     if ($state === 'awaiting_panel_select' && strpos($data, 'panel_') === 0) {
         $idx = (int)substr($data, 6);
         $panels = getUserPanels($cid);
@@ -362,7 +360,6 @@ function handleCallbackQuery($cb) {
         return;
     }
 
-    // Bug domain select
     if ($state === 'awaiting_bug_domain') {
         if ($data === 'custom_bug') {
             setUserState($cid, 'awaiting_bug_domain_text');
@@ -379,18 +376,16 @@ function handleCallbackQuery($cb) {
         }
     }
 
-    // Port select → CREATE FINAL
+    // Port select -> Ask for path
     if ($state === 'awaiting_port_select' && strpos($data, 'port_') === 0) {
         $port = substr($data, 5);
         saveTempData($cid, 'transform_port', $port);
-        clearUserState($cid);
-        editMessageText($cid, $mid, "🔌 Port: <b>{$port}</b>\n\n🔄 Creating VLESS...");
-        createVlessFinal($cid);
+        setUserState($cid, 'awaiting_custom_path');
+        editMessageText($cid, $mid, "🔌 Port: <b>{$port}</b>\n\n📁 Enter WebSocket Path:\n(Example: <code>/</code> or <code>/ray</code> or <code>/wss</code>)\n\nSend path or <code>/</code> for default", 'HTML');
         return;
     }
 
-    // ==================== NORMAL BUTTONS ====================
-    
+    // Normal buttons
     if ($data === 'custom_bug') {
         setUserState($cid, 'awaiting_bug_domain_text');
         editMessageText($cid, $mid, "✏️ Type your custom Bug Domain/IP:");
@@ -437,13 +432,9 @@ function handleCommand($cid, $text, $fname, $isAdmin, $fid) {
     $params = trim(substr($text, strlen($cmd)));
     $parts = explode(' ', $params);
 
-    // ==================== CREATE COMMANDS ====================
-    
-    // /create name days (User: 100GB fixed) OR /create name gb days (Admin)
     if ($cmd === '/create' && count($parts) >= 2) {
         $name = $parts[0];
         
-        // Admin: 3 parts = name gb days
         if ($isAdmin && count($parts) >= 3) {
             $gb = (int)$parts[1];
             $days = (int)$parts[2];
@@ -462,7 +453,6 @@ function handleCommand($cid, $text, $fname, $isAdmin, $fid) {
             return;
         }
         
-        // User: 2 parts = name days (100GB fixed)
         $days = (int)$parts[1];
         if ($days <= 0) {
             sendMessage($cid, "❌ Format: <code>/create name days</code>\nExample: <code>/create sai 30</code>", 'HTML');
@@ -486,13 +476,10 @@ function handleCommand($cid, $text, $fname, $isAdmin, $fid) {
         return;
     }
 
-    // /create (interactive)
     if ($cmd === '/create' && empty($params)) {
         handleCreateCommand($cid, $fid);
         return;
     }
-
-    // ==================== OTHER COMMANDS ====================
     
     switch ($cmd) {
         case '/start':
@@ -500,7 +487,7 @@ function handleCommand($cid, $text, $fname, $isAdmin, $fid) {
             $adm = ($fid == ADMIN_ID || isAdmin($fid));
             $pnCount = count(getUserPanels($cid));
 
-            $msg = "🚀 <b>EVT VPN Bot</b> v13.0\n\n";
+            $msg = "🚀 <b>EVT VPN Bot</b> v14.0 (Auto Inbound)\n\n";
             $msg .= "👋 Hello <b>{$fname}</b>!\n";
             $msg .= "🆔 <code>{$fid}</code>\n";
             $msg .= "💰 <b>{$cr} credit</b>\n";
@@ -511,8 +498,7 @@ function handleCommand($cid, $text, $fname, $isAdmin, $fid) {
                 $msg .= "⚠️ <b>No Panels!</b>\nUse <code>/addpanel</code> to add server.\n\n";
             }
 
-            $msg .= "📌 User: <b>" . DEFAULT_USER_GB . "GB</b> Fixed\n";
-            $msg .= "📌 Admin: Full GB Control\n\n";
+            $msg .= "📌 <b>New Feature:</b> Bot auto-creates inbound with your port & path!\n\n";
             $msg .= "🔗 <b>Commands:</b>\n";
             $msg .= "<code>/addpanel</code> - Add server\n";
             $msg .= "<code>/create name days</code> - Create VLESS\n";
@@ -583,7 +569,6 @@ function handleCommand($cid, $text, $fname, $isAdmin, $fid) {
             sendMessage($cid, "❌ Cancelled.");
             break;
 
-        // Admin
         case '/addcredit':
             if ($fid != ADMIN_ID && !isAdmin($fid)) { sendMessage($cid, "⛔ Admin only!"); return; }
             setUserState($cid, 'awaiting_addcredit_user');
@@ -626,122 +611,7 @@ function handleCommand($cid, $text, $fname, $isAdmin, $fid) {
     }
 }
 
-// ==================== PANEL MANAGEMENT FUNCTIONS ====================
-
-function showPanelManagement($cid, $mid = null) {
-    $panels = getUserPanels($cid);
-    
-    if (empty($panels)) {
-        $msg = "📭 <b>No panels configured!</b>\n\nUse <code>/addpanel</code> to add a server.";
-        if ($mid) editMessageText($cid, $mid, $msg);
-        else sendMessage($cid, $msg, 'HTML');
-        return;
-    }
-    
-    $msg = "⚙️ <b>Panel Management</b>\n\n";
-    $msg .= "Total: <b>" . count($panels) . "</b> panels\n\n";
-    $msg .= "Select a panel to edit or delete:\n";
-    
-    $kb = [];
-    foreach ($panels as $i => $p) {
-        $msg .= ($i+1) . ". <b>{$p['name']}</b> - {$p['location']}\n";
-        $kb[] = [
-            ['text' => "✏️ {$p['name']}", 'callback_data' => "edit_panel_{$i}"],
-            ['text' => "🗑️", 'callback_data' => "delete_panel_{$i}"]
-        ];
-    }
-    $kb[] = [['text' => '📡 Add New Panel', 'callback_data' => 'add_panel']];
-    $kb[] = [['text' => '🔙 Back', 'callback_data' => 'my_panels']];
-    
-    if ($mid) {
-        editMessageText($cid, $mid, $msg, 'HTML', json_encode(['inline_keyboard' => $kb]));
-    } else {
-        sendMessage($cid, $msg, 'HTML', json_encode(['inline_keyboard' => $kb]));
-    }
-}
-
-function updatePanelField($cid, $idx, $field, $value) {
-    $file = __DIR__ . "/user_{$cid}.json";
-    if (!file_exists($file)) return false;
-    
-    $data = json_decode(file_get_contents($file), true);
-    if (!isset($data['panels'][$idx])) return false;
-    
-    $data['panels'][$idx][$field] = $value;
-    file_put_contents($file, json_encode($data));
-    
-    // Also update panels.php
-    syncPanelsToFile($cid);
-    return true;
-}
-
-function deletePanel($cid, $idx) {
-    $file = __DIR__ . "/user_{$cid}.json";
-    if (!file_exists($file)) return false;
-    
-    $data = json_decode(file_get_contents($file), true);
-    if (!isset($data['panels'][$idx])) return false;
-    
-    unset($data['panels'][$idx]);
-    $data['panels'] = array_values($data['panels']); // Re-index
-    file_put_contents($file, json_encode($data));
-    
-    // Update panels.php
-    syncPanelsToFile($cid);
-    return true;
-}
-
-function syncPanelsToFile($cid) {
-    $panels = getUserPanels($cid);
-    $pfile = __DIR__ . '/panels.php';
-    
-    $content = "<?php\ndeclare(strict_types=1);\n\n";
-    $content .= "if (basename(\$_SERVER['PHP_SELF']) === 'panels.php') {\n";
-    $content .= "    header('Content-Type: application/json');\n}\n\n";
-    $content .= "\$panels = [\n";
-    
-    foreach ($panels as $p) {
-        $content .= "    '" . addslashes($p['name']) . "' => [\n";
-        $content .= "        'url' => '" . addslashes($p['url']) . "',\n";
-        $content .= "        'username' => '" . addslashes($p['username']) . "',\n";
-        $content .= "        'password' => '" . addslashes($p['password']) . "',\n";
-        $content .= "        'location' => '" . addslashes($p['location']) . "',\n";
-        $content .= "        'domain' => '" . addslashes($p['domain']) . "',\n";
-        $content .= "        'type' => 'Premium'\n";
-        $content .= "    ],\n";
-    }
-    
-    $content .= "];\n\n";
-    $content .= "if (basename(\$_SERVER['PHP_SELF']) === 'panels.php') {\n";
-    $content .= "    \$formatted = [];\n";
-    $content .= "    foreach (\$panels as \$n => \$c) {\n";
-    $content .= "        \$formatted[] = ['server_name' => \$n, 'location' => \$c['location'], 'type' => \$c['type']];\n";
-    $content .= "    }\n";
-    $content .= "    echo json_encode(['status' => 'success', 'panels' => \$formatted], JSON_PRETTY_PRINT);\n";
-    $content .= "    exit;\n}\n\n";
-    $content .= "return \$panels;\n";
-    
-    file_put_contents($pfile, $content);
-}
-
-function addPanelToFile($name, $data, $userId) {
-    $ufile = __DIR__ . "/user_{$userId}.json";
-    $udata = file_exists($ufile) ? json_decode(file_get_contents($ufile), true) : [];
-    $udata['panels'][] = [
-        'name' => $name,
-        'url' => $data['url'],
-        'username' => $data['username'],
-        'password' => $data['password'],
-        'location' => $data['location'],
-        'domain' => $data['domain']
-    ];
-    file_put_contents($ufile, json_encode($udata));
-    
-    // Sync to panels.php
-    syncPanelsToFile($userId);
-}
-
-// ==================== CREATE VLESS ====================
+// ==================== CREATE VLESS (UPDATED) ====================
 
 function handleCreateCommand($cid, $fid) {
     $isAdmin = ($fid == ADMIN_ID || isAdmin($fid));
@@ -768,6 +638,7 @@ function createVlessFinal($cid) {
     $panel = getTempData($cid, 'selected_panel');
     $bugDomain = getTempData($cid, 'bug_domain');
     $port = getTempData($cid, 'transform_port');
+    $customPath = getTempData($cid, 'custom_path') ?: '/';
 
     if (!$name || !$days || !$panel) {
         sendMessage($cid, "❌ Session expired. Use /create again.");
@@ -775,9 +646,8 @@ function createVlessFinal($cid) {
         return;
     }
 
-    sendMessage($cid, "🔄 <b>Creating VLESS on {$panel['name']}...</b>", 'HTML');
+    sendMessage($cid, "🔄 <b>Creating VLESS on {$panel['name']}...</b>\n🔌 Port: {$port}\n📁 Path: {$customPath}", 'HTML');
 
-    // Login to panel
     $cookie = apiLoginDirect($panel['url'], $panel['username'], $panel['password']);
     if (!$cookie) {
         sendMessage($cid, "❌ Panel login failed!\nCheck credentials in <code>/panels</code>", 'HTML');
@@ -785,69 +655,71 @@ function createVlessFinal($cid) {
         return;
     }
 
-    // Find port 8080 inbound
-    $list = apiCallDirect($panel['url'], $cookie, "xui/API/inbounds/", [], "GET");
-    $targetInbound = null;
-    if (isset($list['obj'])) {
-        foreach ($list['obj'] as $ib) {
-            if ($ib['port'] == 8080 && strtolower($ib['protocol']) == 'vless') {
-                $targetInbound = $ib;
-                break;
-            }
-        }
-    }
-
-    if (!$targetInbound) {
-        sendMessage($cid, "❌ Port 8080 VLESS inbound not found on <b>{$panel['name']}</b>!\nCreate it in your panel first.", 'HTML');
+    // Call api.php with auto inbound creation
+    $apiUrl = rtrim($panel['url'], '/') . '/api.php';
+    $query = http_build_query([
+        'api_key' => 't.me/evtvpn143',
+        'panel' => 1,
+        'name' => $name,
+        'gb' => $gb,
+        'exp' => $days,
+        'port' => $port,
+        'path' => $customPath
+    ]);
+    
+    $fullUrl = $apiUrl . '?' . $query;
+    
+    $ch = curl_init($fullUrl);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 60,
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_SSL_VERIFYHOST => 0,
+        CURLOPT_HTTPHEADER => ["Cookie: $cookie", "Accept: application/json"]
+    ]);
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    
+    if ($httpCode !== 200 || !$response) {
+        sendMessage($cid, "❌ API request failed (HTTP {$httpCode})", 'HTML');
         clearTempData($cid);
         return;
     }
-
-    // Create client
-    $uuid = generateUUID();
-    $totalBytes = $gb * 1024 * 1024 * 1024;
-    $expiry = ($days > 0) ? (time() + ($days * 86400)) * 1000 : 0;
-
-    $clientData = [
-        "id" => $targetInbound['id'],
-        "settings" => json_encode(["clients" => [[
-            "id" => $uuid, "flow" => "", "email" => $name,
-            "totalGB" => $totalBytes, "expiryTime" => $expiry, "enable" => true
-        ]]])
-    ];
-
-    $res = apiCallDirect($panel['url'], $cookie, "xui/API/inbounds/addClient", $clientData);
-    if (!isset($res['success']) || !$res['success']) {
-        sendMessage($cid, "❌ Create failed!\n" . ($res['msg'] ?? 'Unknown error'), 'HTML');
+    
+    $result = json_decode($response, true);
+    
+    if (!$result || !isset($result['success']) || !$result['success']) {
+        $errorMsg = $result['msg'] ?? 'Unknown error from panel';
+        sendMessage($cid, "❌ Create failed!\n{$errorMsg}", 'HTML');
         clearTempData($cid);
         return;
     }
-
-    // Build SINGLE TRANSFORM CONFIG
+    
+    // Build final config with bug domain
     $panelHost = parse_url($panel['url'], PHP_URL_HOST);
-    $path = urlencode('/');
-    $remark = urlencode('EVT BYPASS-' . substr($uuid, 0, 8));
     $sni = $panel['domain'] ?? $panelHost;
     $bd = $bugDomain ?: 'mpt.com.mm';
     $pt = $port ?: '443';
-
-    $config = "vless://{$uuid}@{$bd}:{$pt}?type=ws&security=tls&encryption=none&host=" . urlencode($sni) . "&path={$path}&sni=" . urlencode($sni) . "&alpn=" . urlencode('http/1.1') . "&fp=chrome#{$remark}";
-
-    // Save
-    saveVlessHistory($cid, $name, $gb, $days, $uuid, $config);
-    saveLastConfig($cid, $config);
+    $pathRaw = $customPath;
+    $uuid = $result['uuid'];
+    
+    $finalConfig = "vless://{$uuid}@{$bd}:{$pt}?type=ws&security=tls&encryption=none&host=" . urlencode($sni) . "&path=" . urlencode($pathRaw) . "&sni=" . urlencode($sni) . "&alpn=http/1.1&fp=chrome#EVT-{$name}";
+    
+    saveVlessHistory($cid, $name, $gb, $days, $uuid, $finalConfig);
+    saveLastConfig($cid, $finalConfig);
     if ($bugDomain) saveUserSetting($cid, 'bug_domain', $bugDomain, 'default');
-
-    // Output
-    $msg = "✅ <b>VLESS Created!</b>\n\n";
+    
+    $msg = "✅ <b>VLESS Created (Auto Inbound)!</b>\n\n";
     $msg .= "👤 <code>{$name}</code>\n";
     $msg .= "🔑 <code>{$uuid}</code>\n";
     $msg .= "📊 {$gb}GB | 📅 {$days}d\n";
     $msg .= "📡 {$panel['name']}\n";
-    $msg .= "🐛 Bug: <code>{$bd}</code>\n";
-    $msg .= "🔌 Port: <code>{$pt}</code>\n\n";
+    $msg .= "🔌 Port: <code>{$pt}</code>\n";
+    $msg .= "📁 Path: <code>{$pathRaw}</code>\n";
+    $msg .= "🐛 Bug: <code>{$bd}</code>\n\n";
     $msg .= "📎 <b>Config:</b>\n";
-    $msg .= "<code>{$config}</code>\n\n";
+    $msg .= "<code>{$finalConfig}</code>\n\n";
     $msg .= "👨‍💻 @evtvpn143";
 
     clearTempData($cid);
@@ -991,6 +863,115 @@ function showBugDomainKeyboard($cid) {
     sendMessage($cid, "🐛 <b>Select Bug Domain:</b>", 'HTML', json_encode(['inline_keyboard' => $kb]));
 }
 
+// ==================== PANEL MANAGEMENT FUNCTIONS (Keep original) ====================
+
+function showPanelManagement($cid, $mid = null) {
+    $panels = getUserPanels($cid);
+    
+    if (empty($panels)) {
+        $msg = "📭 <b>No panels configured!</b>\n\nUse <code>/addpanel</code> to add a server.";
+        if ($mid) editMessageText($cid, $mid, $msg);
+        else sendMessage($cid, $msg, 'HTML');
+        return;
+    }
+    
+    $msg = "⚙️ <b>Panel Management</b>\n\n";
+    $msg .= "Total: <b>" . count($panels) . "</b> panels\n\n";
+    $msg .= "Select a panel to edit or delete:\n";
+    
+    $kb = [];
+    foreach ($panels as $i => $p) {
+        $msg .= ($i+1) . ". <b>{$p['name']}</b> - {$p['location']}\n";
+        $kb[] = [
+            ['text' => "✏️ {$p['name']}", 'callback_data' => "edit_panel_{$i}"],
+            ['text' => "🗑️", 'callback_data' => "delete_panel_{$i}"]
+        ];
+    }
+    $kb[] = [['text' => '📡 Add New Panel', 'callback_data' => 'add_panel']];
+    $kb[] = [['text' => '🔙 Back', 'callback_data' => 'my_panels']];
+    
+    if ($mid) {
+        editMessageText($cid, $mid, $msg, 'HTML', json_encode(['inline_keyboard' => $kb]));
+    } else {
+        sendMessage($cid, $msg, 'HTML', json_encode(['inline_keyboard' => $kb]));
+    }
+}
+
+function updatePanelField($cid, $idx, $field, $value) {
+    $file = __DIR__ . "/user_{$cid}.json";
+    if (!file_exists($file)) return false;
+    
+    $data = json_decode(file_get_contents($file), true);
+    if (!isset($data['panels'][$idx])) return false;
+    
+    $data['panels'][$idx][$field] = $value;
+    file_put_contents($file, json_encode($data));
+    syncPanelsToFile($cid);
+    return true;
+}
+
+function deletePanel($cid, $idx) {
+    $file = __DIR__ . "/user_{$cid}.json";
+    if (!file_exists($file)) return false;
+    
+    $data = json_decode(file_get_contents($file), true);
+    if (!isset($data['panels'][$idx])) return false;
+    
+    unset($data['panels'][$idx]);
+    $data['panels'] = array_values($data['panels']);
+    file_put_contents($file, json_encode($data));
+    syncPanelsToFile($cid);
+    return true;
+}
+
+function syncPanelsToFile($cid) {
+    $panels = getUserPanels($cid);
+    $pfile = __DIR__ . '/panels.php';
+    
+    $content = "<?php\ndeclare(strict_types=1);\n\n";
+    $content .= "if (basename(\$_SERVER['PHP_SELF']) === 'panels.php') {\n";
+    $content .= "    header('Content-Type: application/json');\n}\n\n";
+    $content .= "\$panels = [\n";
+    
+    foreach ($panels as $p) {
+        $content .= "    '" . addslashes($p['name']) . "' => [\n";
+        $content .= "        'url' => '" . addslashes($p['url']) . "',\n";
+        $content .= "        'username' => '" . addslashes($p['username']) . "',\n";
+        $content .= "        'password' => '" . addslashes($p['password']) . "',\n";
+        $content .= "        'location' => '" . addslashes($p['location']) . "',\n";
+        $content .= "        'domain' => '" . addslashes($p['domain']) . "',\n";
+        $content .= "        'type' => 'Premium'\n";
+        $content .= "    ],\n";
+    }
+    
+    $content .= "];\n\n";
+    $content .= "if (basename(\$_SERVER['PHP_SELF']) === 'panels.php') {\n";
+    $content .= "    \$formatted = [];\n";
+    $content .= "    foreach (\$panels as \$n => \$c) {\n";
+    $content .= "        \$formatted[] = ['server_name' => \$n, 'location' => \$c['location'], 'type' => \$c['type']];\n";
+    $content .= "    }\n";
+    $content .= "    echo json_encode(['status' => 'success', 'panels' => \$formatted], JSON_PRETTY_PRINT);\n";
+    $content .= "    exit;\n}\n\n";
+    $content .= "return \$panels;\n";
+    
+    file_put_contents($pfile, $content);
+}
+
+function addPanelToFile($name, $data, $userId) {
+    $ufile = __DIR__ . "/user_{$userId}.json";
+    $udata = file_exists($ufile) ? json_decode(file_get_contents($ufile), true) : [];
+    $udata['panels'][] = [
+        'name' => $name,
+        'url' => $data['url'],
+        'username' => $data['username'],
+        'password' => $data['password'],
+        'location' => $data['location'],
+        'domain' => $data['domain']
+    ];
+    file_put_contents($ufile, json_encode($udata));
+    syncPanelsToFile($userId);
+}
+
 function listUserPanels($cid) {
     $panels = getUserPanels($cid);
     if (empty($panels)) {
@@ -1018,16 +999,19 @@ function showHistory($cid) {
 
 function showHelp($cid, $fid) {
     $adm = ($fid == ADMIN_ID || isAdmin($fid));
-    $msg = "📚 <b>Help</b>\n\n";
-    $msg .= "<b>Setup:</b>\n<code>/addpanel</code> - Add server\n<code>/panels</code> - Manage panels (Edit/Delete)\n\n";
-    $msg .= "<b>User Create:</b>\n<code>/create name days</code>\n📊 " . DEFAULT_USER_GB . "GB Fixed\n\n";
+    $msg = "📚 <b>Help v14.0 (Auto Inbound)</b>\n\n";
+    $msg .= "<b>Setup:</b>\n<code>/addpanel</code> - Add server\n<code>/panels</code> - Manage panels\n\n";
+    $msg .= "<b>Create VLESS (Auto creates inbound!):</b>\n";
+    $msg .= "<code>/create name days</code>\n";
+    $msg .= "→ Choose port, then enter path\n";
+    $msg .= "→ Bot creates inbound + client automatically\n\n";
     if ($adm) {
         $msg .= "<b>Admin Create:</b>\n<code>/create name gb days</code>\n\n";
-        $msg .= "<b>Admin:</b>\n<code>/addcredit</code> | <code>/delcredit</code>\n";
+        $msg .= "<b>Admin Commands:</b>\n";
+        $msg .= "<code>/addcredit</code> | <code>/delcredit</code>\n";
         $msg .= "<code>/users</code> | <code>/broadcast</code>\n";
-        $msg .= "<code>/addadmin id</code> | <code>/deladmin id</code>\n\n";
     }
-    $msg .= "<b>Other:</b>\n<code>/balance</code> | <code>/bug</code> | <code>/qr</code>\n";
+    $msg .= "\n<b>Other:</b>\n<code>/balance</code> | <code>/bug</code> | <code>/qr</code>\n";
     $msg .= "<code>/traffic email</code> | <code>/delete email</code>\n";
     $msg .= "<code>/history</code>\n\n👨‍💻 @evtvpn143";
     sendMessage($cid, $msg, 'HTML');
