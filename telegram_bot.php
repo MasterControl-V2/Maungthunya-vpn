@@ -603,11 +603,23 @@ function createVlessFinal($cid) {
     $panel = getTempData($cid, 'selected_panel');
     $bugDomain = getTempData($cid, 'bug_domain');
     $port = getTempData($cid, 'transform_port');
-    $customPath = getTempData($cid, 'custom_path') ?: '/';
+    
+    // ✅ FIX: Get custom_path properly
+    $customPath = getTempData($cid, 'custom_path');
+    if (!$customPath) {
+        $customPath = '/';
+    }
+    if ($customPath[0] !== '/') {
+        $customPath = '/' . $customPath;
+    }
+
+    // Debug log (check Render logs)
+    debugLog("CreateVlessFinal: name=$name, port=$port, path=$customPath");
 
     if (!$name || !$days || !$panel) {
         sendMessage($cid, "❌ Session expired. Use /create again.");
         clearTempData($cid);
+        clearUserState($cid);
         return;
     }
 
@@ -617,6 +629,7 @@ function createVlessFinal($cid) {
     if (!$cookie) {
         sendMessage($cid, "❌ Panel login failed!\nCheck credentials in <code>/panels</code>", 'HTML');
         clearTempData($cid);
+        clearUserState($cid);
         return;
     }
 
@@ -648,6 +661,7 @@ function createVlessFinal($cid) {
     if ($httpCode !== 200 || !$response) {
         sendMessage($cid, "❌ API request failed (HTTP {$httpCode})", 'HTML');
         clearTempData($cid);
+        clearUserState($cid);
         return;
     }
     
@@ -657,6 +671,7 @@ function createVlessFinal($cid) {
         $errorMsg = $result['msg'] ?? 'Unknown error from panel';
         sendMessage($cid, "❌ Create failed!\n{$errorMsg}", 'HTML');
         clearTempData($cid);
+        clearUserState($cid);
         return;
     }
     
@@ -686,6 +701,7 @@ function createVlessFinal($cid) {
     $msg .= "👨‍💻 @evtvpn143";
 
     clearTempData($cid);
+    clearUserState($cid);
 
     $kb = [
         [['text' => '📱 QR Code', 'callback_data' => 'get_qr']],
