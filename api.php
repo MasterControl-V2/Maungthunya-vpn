@@ -5,8 +5,6 @@ header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
 
 const API_KEY = 't.me/evtvpn143';
-const VLESS_PORT = 8080;
-const VLESS_PROTOCOL = 'vless';
 
 $all_panels_config = require_once __DIR__ . '/panels.php';
 
@@ -74,7 +72,6 @@ if ($api_key !== API_KEY) {
 
 $panelIdx = (int)($_GET['panel'] ?? 1);
 
-// If no panels, return empty
 if (empty($all_panels_config)) {
     die(json_encode(['error' => 'No panels configured', 'dev' => '@evtvpn143', 'hint' => 'Use Bot /addpanel to add server']));
 }
@@ -142,49 +139,88 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['import'])) {
     $res = api_call($url, $cookie, "xui/API/server/status", [], "GET");
     $res['dev'] = '@evtvpn143';
     echo json_encode($res, JSON_PRETTY_PRINT);
-} elseif (isset($_GET['name']) && isset($_GET['gb'])) {
-    $list = api_call($url, $cookie, "xui/API/inbounds/", [], "GET");
-    $targetInbound = null;
-    if (isset($list['obj'])) {
-        foreach ($list['obj'] as $ib) {
-            if ($ib['port'] == VLESS_PORT && strtolower($ib['protocol']) == VLESS_PROTOCOL) {
-                $targetInbound = $ib;
-                break;
-            }
-        }
-    }
-    if (!$targetInbound) die(json_encode(['success' => false, 'msg' => 'Port 8080 inbound not found']));
-
-    $uuid = generateUUID();
-    $totalBytes = (int)$_GET['gb'] * 1024 * 1024 * 1024;
+} elseif (isset($_GET['name']) && isset($_GET['gb']) && isset($_GET['port']) && isset($_GET['path'])) {
+    // ========== NEW: Auto-create inbound + client ==========
+    $email = $_GET['name'];
+    $totalGB = (int)$_GET['gb'] * 1024 * 1024 * 1024;
     $expiry = (int)($_GET['exp'] ?? 0);
     $expiry = $expiry > 0 ? (time() + ($expiry * 86400)) * 1000 : 0;
-
+    $port = (int)$_GET['port'];
+    $path = '/' . ltrim($_GET['path'], '/');
+    
+    // 1. Create new inbound
+    $inboundData = [
+        "port" => $port,
+        "protocol" => "vless",
+        "settings" => json_encode([
+            "clients" => [],
+            "decryption" => "none",
+            "fallbacks" => []
+        ]),
+        "streamSettings" => json_encode([
+            "network" => "ws",
+            "security" => "none",
+            "wsSettings" => [
+                "path" => $path
+            ]
+        ]),
+        "sniffing" => json_encode([
+            "enabled" => true,
+            "destOverride" => ["http", "tls"]
+        ]),
+        "remark" => "Bot-Created-" . date('YmdHis') . "-Port{$port}"
+    ];
+    
+    $createRes = api_call($url, $cookie, "xui/API/inbounds/add", $inboundData, "POST");
+    if (!$createRes['success']) {
+        echo json_encode(['success' => false, 'msg' => 'Inbound creation failed: ' . ($createRes['msg'] ?? 'Unknown')]);
+        exit;
+    }
+    
+    $inboundId = $createRes['obj']['id'] ?? null;
+    if (!$inboundId) {
+        echo json_encode(['success' => false, 'msg' => 'Inbound created but no ID returned']);
+        exit;
+    }
+    
+    // 2. Create UUID for client
+    $uuid = generateUUID();
+    
+    // 3. Add client to the new inbound
     $clientData = [
-        "id" => $targetInbound['id'],
+        "id" => $inboundId,
         "settings" => json_encode(["clients" => [[
-            "id" => $uuid, "flow" => "", "email" => $_GET['name'],
-            "totalGB" => $totalBytes, "expiryTime" => $expiry, "enable" => true
+            "id" => $uuid,
+            "flow" => "",
+            "email" => $email,
+            "totalGB" => $totalGB,
+            "expiryTime" => $expiry,
+            "enable" => true
         ]]])
     ];
-
-    $res = api_call($url, $cookie, "xui/API/inbounds/addClient", $clientData);
-    if (!$res['success']) { echo json_encode($res); exit; }
-
+    
+    $addClientRes = api_call($url, $cookie, "xui/API/inbounds/addClient", $clientData, "POST");
+    if (!$addClientRes['success']) {
+        echo json_encode(['success' => false, 'msg' => 'Client add failed: ' . ($addClientRes['msg'] ?? 'Unknown')]);
+        exit;
+    }
+    
+    // 4. Build config
     $pHost = parse_url($url, PHP_URL_HOST);
-    $path = urlencode('/');
-    $host = '';
-    $remark = urlencode('EVT BYPASS-' . substr($uuid, 0, 8));
-    $config = "vless://{$uuid}@{$pHost}:8080?type=ws&encryption=none&path={$path}&host={$host}&security=none#{$remark}";
-
+    $remark = urlencode('EVT-' . substr($uuid, 0, 8));
+    $config = "vless://{$uuid}@{$pHost}:{$port}?type=ws&encryption=none&path=" . urlencode($path) . "&host=&security=none#{$remark}";
+    
     echo json_encode([
         'success' => true,
-        'user' => $_GET['name'],
+        'user' => $email,
         'uuid' => $uuid,
+        'port' => $port,
+        'path' => $path,
         'quota' => $_GET['gb'] . 'GB',
         'config' => $config,
         'dev' => '@evtvpn143'
     ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+    
 } elseif (isset($_GET['delete'])) {
     $list = api_call($url, $cookie, "xui/API/inbounds/", [], "GET");
     $found = false;
@@ -216,7 +252,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['import'])) {
     echo json_encode([
         'status' => 'ready',
         'dev' => '@evtvpn143',
-        'port' => VLESS_PORT,
+        'port' => 'auto',
         'total_panels' => count($formatted),
         'panels' => $formatted
     ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
